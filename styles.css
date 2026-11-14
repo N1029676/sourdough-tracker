@@ -1,0 +1,36 @@
+/* Small overrides on top of Bootstrap 5.3 */
+:root { --crust: #b9772f; }
+
+body { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
+main { max-width: 640px; }
+
+.app-header {
+  background: var(--crust);
+  color: #fff;
+  padding-top: calc(0.5rem + env(safe-area-inset-top));
+}
+
+.app-nav {
+  background: var(--bs-body-bg);
+  border-top: 1px solid var(--bs-border-color);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.app-nav .nav-link { color: var(--bs-body-color); }
+.app-nav .nav-link.active { background: var(--crust); color: #fff; }
+
+.btn-primary {
+  --bs-btn-bg: var(--crust);
+  --bs-btn-border-color: var(--crust);
+  --bs-btn-hover-bg: #9c6325;
+  --bs-btn-hover-border-color: #9c6325;
+  --bs-btn-active-bg: #8a561f;
+  --bs-btn-active-border-color: #8a561f;
+  --bs-btn-disabled-bg: var(--crust);
+  --bs-btn-disabled-border-color: var(--crust);
+}
+
+.big-num { font-size: 1.75rem; font-weight: 600; line-height: 1.1; }
+.step-target { font-size: 0.8rem; color: var(--bs-secondary-color); }
+.tab-pane-app[hidden] { display: none !important; }
+input[type="number"] { min-width: 0; }
+.table-sm td, .table-sm th { vertical-align: middle; }

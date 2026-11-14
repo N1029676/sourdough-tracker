@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Starter Tracker</title>
+  <meta name="description" content="Offline sourdough starter feeding log and feed-time planner.">
+  <meta name="theme-color" content="#b9772f">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header px-3 py-2">
+    <h1 class="h5 m-0">🫙 Starter Tracker</h1>
+  </header>
+
+  <main class="container-sm px-3 py-3" id="main">
+    <section id="tab-feed" class="tab-pane-app"></section>
+    <section id="tab-plan" class="tab-pane-app" hidden></section>
+    <section id="tab-history" class="tab-pane-app" hidden></section>
+    <section id="tab-settings" class="tab-pane-app" hidden></section>
+  </main>
+
+  <nav class="app-nav fixed-bottom" aria-label="Sections">
+    <ul class="nav nav-pills nav-fill p-1" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-tab="feed" type="button">Feed</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="plan" type="button">Plan</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="history" type="button">History</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="settings" type="button">Settings</button></li>
+    </ul>
+  </nav>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
