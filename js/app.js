@@ -503,9 +503,9 @@ function renderSettings() {
       <h2 class="h5">Containers</h2>
       ${s.containers.length ? s.containers.map(containerRow).join('') : '<p class="text-secondary small">None yet.</p>'}
       <form id="add-container" class="row g-2 mt-1" autocomplete="off">
-        <div class="col-6"><input id="c-name" class="form-control" type="text" placeholder="Name (e.g. Quart jar)" aria-label="Container name" required></div>
+        <div class="col-5"><input id="c-name" class="form-control" type="text" placeholder="Name (e.g. Quart jar)" aria-label="Container name" required></div>
         <div class="col-4"><input id="c-tare" class="form-control" type="number" inputmode="decimal" step="any" min="0" placeholder="Empty g" aria-label="Empty weight in grams" required></div>
-        <div class="col-2"><button class="btn btn-primary w-100" type="submit">Add</button></div>
+        <div class="col-3"><button class="btn btn-primary w-100" type="submit">Add</button></div>
       </form>
     </div></div>
 
@@ -517,8 +517,78 @@ function renderSettings() {
         <label class="btn btn-outline-secondary mb-0">Import JSON<input id="s-import" type="file" accept="application/json,.json" hidden></label>
       </div>
       <div id="backup-msg" class="small mt-2" role="status"></div>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h5">About</h2>
+      <div>Version <strong>${esc(APP_VERSION)}</strong> <span class="text-secondary small">(${esc(versionDate(APP_VERSION))})</span></div>
+      <div id="update-msg" class="small mt-1" role="status"></div>
+      <div class="d-flex gap-2 mt-2">
+        <button class="btn btn-outline-secondary btn-sm" data-action="check-update" type="button">Check for updates</button>
+        <button class="btn btn-primary btn-sm" data-action="apply-update" type="button" hidden>Update now</button>
+      </div>
     </div></div>`;
+  checkForUpdate();
 }
+
+/* ---------- version / updates ---------- */
+const APP_VERSION = globalThis.APP_VERSION || 'dev';
+
+/** yymmddhhmm -> readable local-style date string. */
+function versionDate(v) {
+  const m = /^(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)$/.exec(v);
+  return m ? `20${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : 'development build';
+}
+
+async function fetchLatestVersion() {
+  // the service worker lets ?check requests through to the network
+  const res = await fetch(`js/version.js?check=${Date.now()}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const m = /APP_VERSION\s*=\s*["'](\d{10})["']/.exec(await res.text());
+  if (!m) throw new Error('version not found');
+  return m[1];
+}
+
+async function checkForUpdate() {
+  const msg = $('#update-msg');
+  const apply = $('[data-action=apply-update]');
+  if (!msg) return;
+  msg.className = 'small mt-1 text-secondary';
+  msg.textContent = 'Checking…';
+  apply.hidden = true;
+  try {
+    const latest = await fetchLatestVersion();
+    if (!$('#update-msg')) return; // left the Settings tab meanwhile
+    if (/^\d{10}$/.test(APP_VERSION) ? +latest > +APP_VERSION : latest !== APP_VERSION) {
+      msg.className = 'small mt-1 text-success-emphasis';
+      msg.textContent = `Newer version available: ${latest} (${versionDate(latest)}).`;
+      apply.hidden = false;
+    } else {
+      msg.textContent = 'You are on the latest version.';
+    }
+  } catch {
+    msg.className = 'small mt-1 text-warning-emphasis';
+    msg.textContent = 'Could not check for updates (offline?).';
+  }
+}
+
+let updating = false;
+async function applyUpdate() {
+  const msg = $('#update-msg');
+  msg.textContent = 'Updating…';
+  updating = true;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (!reg) return location.reload();
+    await reg.update(); // new worker skips waiting + claims, which triggers controllerchange
+    setTimeout(() => location.reload(), 4000); // fallback if no controllerchange arrives
+  } catch {
+    location.reload();
+  }
+}
+navigator.serviceWorker?.addEventListener('controllerchange', () => {
+  if (updating) location.reload();
+});
 
 function containerRow(c) {
   return `
@@ -612,6 +682,8 @@ const actions = {
     update((s) => (s.feedings = s.feedings.filter((f) => f.id !== btn.dataset.id)));
     renderHistory();
   },
+  'check-update': () => checkForUpdate(),
+  'apply-update': () => applyUpdate(),
   ics(btn) {
     const s = getState();
     const { factor } = factorInfo();
@@ -638,7 +710,7 @@ mq.addEventListener?.('change', applyTheme);
 setInterval(() => { if (currentTab === 'feed') renderStatus(); }, 60000);
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 }
 requestPersistence();
 showTab('feed');
