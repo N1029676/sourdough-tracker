@@ -13,7 +13,7 @@ Offline-capable single-page PWA (vanilla JS + self-hosted Bootstrap CSS, no buil
     python3 -m http.server 8000   # then open http://localhost:8000
 
 Service worker / install need HTTPS or localhost; deploy the folder to any static host (e.g. GitHub Pages).
-**Before every commit run `scripts/bump-version.sh`** to refresh `js/version.js` (version = date/time `yymmddhhmm`). The service-worker cache and the in-app update check use it, so installed copies only update when it changes.
+**Before every commit run `scripts/bump-version.sh`** to refresh `js/version.js` (version = UTC date/time `yymmddhhmm`). The service-worker cache and the in-app update check use it, so installed copies only update when it changes.
 
 ## Test
 

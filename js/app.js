@@ -534,10 +534,10 @@ function renderSettings() {
 /* ---------- version / updates ---------- */
 const APP_VERSION = globalThis.APP_VERSION || 'dev';
 
-/** yymmddhhmm -> readable local-style date string. */
+/** yymmddhhmm (UTC) -> readable date string. */
 function versionDate(v) {
   const m = /^(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)$/.exec(v);
-  return m ? `20${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : 'development build';
+  return m ? `20${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]} UTC` : 'development build';
 }
 
 async function fetchLatestVersion() {
