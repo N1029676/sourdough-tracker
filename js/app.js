@@ -53,6 +53,7 @@ let currentTab = 'feed';
 
 function showTab(name) {
   currentTab = name;
+  if (name !== 'history') editingId = null;
   for (const btn of document.querySelectorAll('[data-tab]')) btn.classList.toggle('active', btn.dataset.tab === name);
   for (const t of Object.keys(renderers)) $(`#tab-${t}`).hidden = t !== name;
   renderers[name]();
@@ -464,6 +465,7 @@ function renderHistory() {
 }
 
 function historyItem(f) {
+  if (editingId === f.id) return editForm(f);
   const a = f.actual;
   const pr = f.proposed;
   const diff = (act, prop) => (Math.round(act) === Math.round(prop) ? '' : ` <span class="text-secondary">(proposed ${Math.round(prop)})</span>`);
@@ -483,10 +485,107 @@ function historyItem(f) {
           : `<button class="btn btn-outline-secondary btn-sm" data-action="peak-now" data-id="${f.id}" type="button">Peaked now</button>
              <input type="datetime-local" class="form-control form-control-sm w-auto" id="pk-${f.id}" aria-label="Peak time">
              <button class="btn btn-outline-secondary btn-sm" data-action="peak-at" data-id="${f.id}" type="button">Set</button>`}
-        <button class="btn btn-link btn-sm text-danger p-0 ms-auto" data-action="delete-feeding" data-id="${f.id}" type="button">Delete</button>
+      </div>
+      <div class="d-flex gap-3 justify-content-end mt-1">
+        <button class="btn btn-outline-primary btn-sm" data-action="edit-feeding" data-id="${f.id}" type="button">Edit</button>
+        <button class="btn btn-outline-danger btn-sm" data-action="delete-feeding" data-id="${f.id}" type="button">Delete</button>
       </div>
     </div></div>`;
 }
+
+let editingId = null;
+
+function editForm(f) {
+  const conts = getState().containers.filter((c) => !c.archived || c.id === f.containerId);
+  const a = f.actual;
+  const field = (label, name, value, extra = '') =>
+    `<label class="form-label mb-1 small" for="e-${name}">${label}</label>
+     <input id="e-${name}" name="${name}" class="form-control form-control-sm" ${extra} value="${esc(value)}">`;
+  const numAttrs = 'type="number" inputmode="decimal" step="any" min="0"';
+  return `
+    <form class="card mb-2 border-primary" data-edit-form="${f.id}" autocomplete="off" novalidate>
+      <div class="card-body py-2">
+        <h3 class="h6">Edit feeding</h3>
+        <div class="row g-2 mb-2">
+          <div class="col-7">
+            <label class="form-label mb-1 small" for="e-container">Container</label>
+            <select id="e-container" name="container" class="form-select form-select-sm">
+              ${conts.map((c) => `<option value="${c.id}" ${c.id === f.containerId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="col-5">${field('Jar + starter (g)', 'gross', f.grossBeforeG, numAttrs)}</div>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-7">${field('Fed at', 'at', toLocalInput(f.at), 'type="datetime-local"')}</div>
+          <div class="col-5">${field(`Room temp (${tempLabel()})`, 'temp', tempOut(f.roomTempC), 'type="number" inputmode="decimal" step="any"')}</div>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-4">${field('Discarded', 'discard', a.discardG, numAttrs)}</div>
+          <div class="col-4">${field('Flour', 'flour', a.flourG, numAttrs)}</div>
+          <div class="col-4">${field('Water', 'water', a.waterG, numAttrs)}</div>
+        </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="e-fridge" name="fridge" ${f.fromFridge ? 'checked' : ''}>
+          <label class="form-check-label small" for="e-fridge">Starter was in the fridge</label>
+        </div>
+        <div class="mb-2">${field('Peaked at (blank = not logged)', 'peak', f.peakAt ? toLocalInput(f.peakAt) : '', 'type="datetime-local"')}</div>
+        <div class="mb-2">${field('Note', 'note', f.note || '', 'type="text"')}</div>
+        <div class="text-danger small mb-2 edit-error" role="alert"></div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+          <button class="btn btn-outline-secondary btn-sm" data-action="cancel-edit" type="button">Cancel</button>
+        </div>
+      </div>
+    </form>`;
+}
+
+document.addEventListener('submit', (e) => {
+  const id = e.target.dataset?.editForm;
+  if (!id) return;
+  e.preventDefault();
+  const el = e.target.elements;
+  const err = e.target.querySelector('.edit-error');
+  const fail = (m) => { err.textContent = m; };
+  const s = getState();
+  const f = s.feedings.find((x) => x.id === id);
+  if (!f) return;
+  const c = s.containers.find((x) => x.id === el.container.value);
+  const changed = el.container.value !== f.containerId;
+  const tareG = changed && c ? c.tareG : f.tareG;
+  const gross = parseFloat(el.gross.value);
+  const discard = parseFloat(el.discard.value);
+  const flour = parseFloat(el.flour.value);
+  const water = parseFloat(el.water.value);
+  const at = new Date(el.at.value);
+  const temp = parseFloat(el.temp.value);
+  const peak = el.peak.value ? new Date(el.peak.value) : null;
+  if (!Number.isFinite(gross) || gross < tareG) return fail('Jar + starter must be at least the empty container weight.');
+  if (![discard, flour, water].every((n) => Number.isFinite(n) && n >= 0)) return fail('Enter discarded, flour and water amounts.');
+  if (discard >= gross - tareG) return fail('Discarded amount leaves no starter.');
+  if (Number.isNaN(+at)) return fail('Enter a valid feeding time.');
+  if (peak && (Number.isNaN(+peak) || +peak <= +at)) return fail('Peak time must be after the feeding time.');
+  const keepG = f.proposed?.keepG ?? s.settings.keepG;
+  const p = proposeFeeding({ grossG: gross, tareG, keepG, ratio: f.ratioPlanned });
+  update((st) => {
+    const t = st.feedings.find((x) => x.id === id);
+    Object.assign(t, {
+      at: at.toISOString(),
+      containerId: changed && c ? c.id : t.containerId,
+      containerName: changed && c ? c.name : t.containerName,
+      tareG,
+      grossBeforeG: gross,
+      starterG: Math.round(gross - tareG),
+      actual: { discardG: discard, flourG: flour, waterG: water },
+      fromFridge: el.fridge.checked,
+      roomTempC: Number.isFinite(temp) ? tempIn(temp) : t.roomTempC,
+      peakAt: peak ? peak.toISOString() : null,
+      note: el.note.value.trim(),
+    });
+    if (!p.error) t.proposed = { keepG: p.keepG, discardG: p.discardG, flourG: p.flourG, waterG: p.waterG };
+  });
+  editingId = null;
+  renderHistory();
+});
 
 /* ---------- SETTINGS ---------- */
 function renderSettings() {
@@ -709,6 +808,14 @@ const actions = {
     if (v) setPeak(btn.dataset.id, new Date(v));
   },
   'clear-peak': (btn) => setPeak(btn.dataset.id, null),
+  'edit-feeding'(btn) {
+    editingId = btn.dataset.id;
+    renderHistory();
+  },
+  'cancel-edit'() {
+    editingId = null;
+    renderHistory();
+  },
   'delete-feeding'(btn) {
     if (!confirm('Delete this feeding?')) return;
     update((s) => (s.feedings = s.feedings.filter((f) => f.id !== btn.dataset.id)));
