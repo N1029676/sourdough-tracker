@@ -128,9 +128,12 @@ export function feedingRatio(f) {
  * Scale factor (observed / predicted peak time) from logged peaks.
  * Peaks under 1h are ignored as mis-taps, and the median is shrunk toward 1
  * so a single odd reading barely moves the estimate (weight n / (n + 2)).
+ * Feedings after fridge storage (fromFridge) are calibrated separately: pass
+ * { fridge: true } for those, the default only uses normal feedings.
  */
-export function calibrationFactor(feedings, n = 10) {
+export function calibrationFactor(feedings, n = 10, { fridge = false } = {}) {
   const ratios = feedings
+    .filter((f) => !!f.fromFridge === fridge)
     .filter((f) => f.peakAt && f.roomTempC != null)
     .slice(-n)
     .map((f) => {

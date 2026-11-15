@@ -35,9 +35,16 @@ const tempIn = (v) => (unit() === 'F' ? fToC(v) : v);
 const tempLabel = () => `°${unit()}`;
 
 const activeContainers = () => getState().containers.filter((c) => !c.archived);
-const factorInfo = () => {
+/**
+ * Calibration for normal feedings, or (fridge=true) for feedings after fridge storage.
+ * With no fridge peaks logged yet, falls back to the normal factor and sets fallback.
+ */
+const factorInfo = (fridge = false) => {
   const s = getState();
-  return s.settings.calibrate ? calibrationFactor(s.feedings) : { factor: 1, samples: 0 };
+  if (!s.settings.calibrate) return { factor: 1, samples: 0, fallback: fridge };
+  const own = calibrationFactor(s.feedings, 10, { fridge });
+  if (fridge && own.samples === 0) return { ...calibrationFactor(s.feedings), samples: 0, fallback: true };
+  return { ...own, fallback: false };
 };
 
 /* ---------- tabs ---------- */
@@ -73,6 +80,7 @@ function newForm() {
     ratio: { ...s.settings.ratio },
     keepG: s.settings.keepG,
     dirty: { discard: false, flour: false, water: false },
+    fromFridge: false,
     gross: '',
   };
 }
@@ -141,6 +149,11 @@ function renderFeed() {
           </div>
         </div>
 
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="f-fridge" ${form.fromFridge ? 'checked' : ''}>
+          <label class="form-check-label" for="f-fridge">Starter was in the fridge (first feeding after chilling)</label>
+        </div>
+
         <div id="proposal"></div>
 
         <h3 class="h6 mt-3">What I actually did (g)</h3>
@@ -174,7 +187,7 @@ function renderStatus() {
     box.innerHTML = `<div class="alert alert-secondary mb-0">No feedings logged yet.</div>`;
     return;
   }
-  const { factor } = factorInfo();
+  const { factor, fallback } = factorInfo(!!last.fromFridge);
   const hours = peakHours({ ratio: feedingRatio(last), tempC: last.roomTempC ?? s.settings.defaultTempC, factor });
   const peakAt = new Date(+new Date(last.at) + hours * HOUR);
   const since = (Date.now() - new Date(last.at)) / HOUR;
@@ -188,8 +201,9 @@ function renderStatus() {
     <div class="card"><div class="card-body">
       <div class="text-secondary small">Last fed</div>
       <div class="big-num">${since >= 0 ? fmtDur(since) + ' ago' : 'just now'}</div>
-      <div class="small">${fmtDateTime(last.at)} · ${esc(last.containerName)} · ${ratioLabel(roundRatio(feedingRatio(last)))}</div>
+      <div class="small">${fmtDateTime(last.at)} · ${esc(last.containerName)} · ${ratioLabel(roundRatio(feedingRatio(last)))}${last.fromFridge ? ' <span class="badge text-bg-info">from fridge</span>' : ''}</div>
       <div class="mt-1">${peakLine}</div>
+      ${last.fromFridge && fallback && !last.peakAt ? '<div class="small text-warning-emphasis mt-1">No fridge-start peaks logged yet, so this estimate is for an active starter. A chilled starter is usually much slower on its first feeding.</div>' : ''}
     </div></div>`;
 }
 
@@ -268,7 +282,9 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   if (!form || currentTab !== 'feed') return;
-  if (e.target.id === 'f-container') {
+  if (e.target.id === 'f-fridge') {
+    form.fromFridge = e.target.checked;
+  } else if (e.target.id === 'f-container') {
     form.containerId = e.target.value;
     updateProposal();
   } else if (e.target.id === 'f-ratio') {
@@ -312,6 +328,7 @@ document.addEventListener('submit', (e) => {
       proposed: { keepG: p.keepG, discardG: p.discardG, flourG: p.flourG, waterG: p.waterG },
       actual: { discardG: discard, flourG: flour, waterG: water },
       ratioPlanned: { ...form.ratio },
+      fromFridge: $('#f-fridge').checked,
       roomTempC: Number.isFinite(tempC) ? tempC : s.settings.defaultTempC,
       note,
       peakAt: null,
@@ -334,7 +351,7 @@ function renderPlan() {
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(9, 0, 0, 0);
-    plan = { mixAt: toLocalInput(d), tempC: s.settings.defaultTempC, ratio: { ...s.settings.ratio } };
+    plan = { mixAt: toLocalInput(d), tempC: s.settings.defaultTempC, ratio: { ...s.settings.ratio }, fromFridge: false };
   }
   $('#tab-plan').innerHTML = `
     <div class="card mb-3"><div class="card-body">
@@ -352,6 +369,12 @@ function renderPlan() {
           <label class="form-label mb-1" for="p-ratio">Preferred ratio</label>
           <select id="p-ratio" class="form-select">${ratioOptions(plan.ratio)}</select>
         </div>
+        <div class="col-12">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="p-fridge" ${plan.fromFridge ? 'checked' : ''}>
+            <label class="form-check-label" for="p-fridge">Starter is coming out of the fridge</label>
+          </div>
+        </div>
       </div>
     </div></div>
     <div id="plan-result"></div>`;
@@ -366,7 +389,7 @@ function updatePlan() {
     box.innerHTML = '';
     return;
   }
-  const { factor, samples } = factorInfo();
+  const { factor, samples, fallback } = factorInfo(plan.fromFridge);
   const { rows, recommended } = alternatives({
     mixAt, tempC: plan.tempC, factor, quiet: s.settings.quiet, current: plan.ratio,
   });
@@ -401,8 +424,10 @@ function updatePlan() {
       </table>
     </div></div>
     <p class="small text-secondary">${samples
-      ? `Estimates are adjusted ×${factor.toFixed(2)} from ${samples} peak${samples > 1 ? 's' : ''} you logged.`
-      : 'Estimates are generic until you log a few actual peaks in History.'}</p>`;
+      ? `Estimates are adjusted ×${factor.toFixed(2)} from ${samples} ${plan.fromFridge ? 'fridge-start ' : ''}peak${samples > 1 ? 's' : ''} you logged.`
+      : plan.fromFridge && fallback
+        ? 'No fridge-start peaks logged yet, so this is the estimate for an active starter. A chilled starter is usually much slower on its first feeding; consider feeding earlier.'
+        : 'Estimates are generic until you log a few actual peaks in History.'}</p>`;
 }
 
 document.addEventListener('input', (e) => {
@@ -413,7 +438,12 @@ document.addEventListener('input', (e) => {
   updatePlan();
 });
 document.addEventListener('change', (e) => {
-  if (currentTab !== 'plan' || e.target.id !== 'p-ratio') return;
+  if (currentTab !== 'plan') return;
+  if (e.target.id === 'p-fridge') {
+    plan.fromFridge = e.target.checked;
+    return updatePlan();
+  }
+  if (e.target.id !== 'p-ratio') return;
   const opts = [...RATIO_PRESETS];
   if (!opts.some((r) => sameRatio(r, plan.ratio))) opts.unshift(plan.ratio);
   plan.ratio = { ...opts[+e.target.value] };
@@ -424,9 +454,11 @@ document.addEventListener('change', (e) => {
 function renderHistory() {
   const s = getState();
   const list = [...s.feedings].reverse();
-  const { factor, samples } = factorInfo();
+  const cal = (info, label) =>
+    info.samples ? `<div>${label}: ×${info.factor.toFixed(2)} from ${info.samples} logged peak${info.samples > 1 ? 's' : ''}</div>` : '';
+  const calHtml = cal(factorInfo(false), 'Peak calibration') + cal(factorInfo(true), 'Fridge-start calibration');
   $('#tab-history').innerHTML = list.length
-    ? `${samples ? `<p class="small text-secondary">Peak calibration ×${factor.toFixed(2)} from ${samples} logged peak${samples > 1 ? 's' : ''}.</p>` : ''}
+    ? `${calHtml ? `<div class="small text-secondary mb-2">${calHtml}</div>` : ''}
       ${list.map(historyItem).join('')}`
     : `<div class="alert alert-secondary">No feedings yet.</div>`;
 }
@@ -443,7 +475,7 @@ function historyItem(f) {
         <span class="text-secondary small">${esc(f.containerName)}</span>
       </div>
       <div class="small">Starter ${g(f.starterG)} → discard ${g(a.discardG)}${diff(a.discardG, pr.discardG)}, flour ${g(a.flourG)}${diff(a.flourG, pr.flourG)}, water ${g(a.waterG)}${diff(a.waterG, pr.waterG)}</div>
-      <div class="small text-secondary">Ratio ${ratioLabel(roundRatio(feedingRatio(f)))} · ${tempOut(f.roomTempC)}${tempLabel()}${f.note ? ` · ${esc(f.note)}` : ''}</div>
+      <div class="small text-secondary">Ratio ${ratioLabel(roundRatio(feedingRatio(f)))}${f.fromFridge ? ' · <span class="badge text-bg-info">from fridge</span>' : ''} · ${tempOut(f.roomTempC)}${tempLabel()}${f.note ? ` · ${esc(f.note)}` : ''}</div>
       <div class="mt-1 d-flex flex-wrap gap-2 align-items-center">
         ${observed != null
           ? `<span class="badge text-bg-success">Peaked after ${fmtDur(observed)}</span>
@@ -686,7 +718,7 @@ const actions = {
   'apply-update': () => applyUpdate(),
   ics(btn) {
     const s = getState();
-    const { factor } = factorInfo();
+    const { factor } = factorInfo(plan.fromFridge);
     const p = planFeedTime({ mixAt: new Date(plan.mixAt), ratio: plan.ratio, tempC: plan.tempC, factor });
     const ics = toICS({
       title: `Feed starter (${btn.dataset.ratio})`,

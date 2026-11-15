@@ -115,3 +115,25 @@ test('toICS produces a VEVENT', () => {
   assert.match(s, /DTSTART:20261115T040000Z/);
   assert.match(s, /SUMMARY:Feed starter/);
 });
+
+test('calibrationFactor keeps fridge-start feedings separate', () => {
+  const predicted = peakHours({ ratio: R111, tempC: 24 });
+  const at = new Date('2026-11-10T08:00:00');
+  const mk = (mult, fromFridge) => ({
+    at: at.toISOString(),
+    peakAt: new Date(+at + predicted * mult * HOUR).toISOString(),
+    roomTempC: 24,
+    ratioPlanned: R111,
+    starterG: 100,
+    actual: { discardG: 50, flourG: 50, waterG: 50 },
+    fromFridge,
+  });
+  const all = [mk(1.0, false), mk(1.0, false), mk(1.8, true), mk(1.8, true), mk(1.0, undefined)];
+  const normal = calibrationFactor(all);
+  const fridge = calibrationFactor(all, 10, { fridge: true });
+  assert.equal(normal.samples, 3);
+  assert.ok(Math.abs(normal.factor - 1) < 1e-9, 'fridge peaks must not skew normal factor');
+  assert.equal(fridge.samples, 2);
+  assert.ok(Math.abs(fridge.factor - (1 + 0.8 * (2 / 4))) < 1e-9); // 1 + (1.8-1) * 2/(2+2)
+  assert.deepEqual(calibrationFactor([mk(1, false)], 10, { fridge: true }), { factor: 1, samples: 0 });
+});
